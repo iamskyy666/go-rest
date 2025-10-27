@@ -1,3 +1,4 @@
+```go
 package main
 
 import (
@@ -27,3 +28,4 @@ func main() {
 
 // $ go run .
 // ✅ Server is listening on PORT: :3000
+```

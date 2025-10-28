@@ -333,3 +333,240 @@ That’s why **production APIs always use HTTPS/TLS**.
 
 ---
 
+Let’s break down **each line** in that Postman network info to understand what it means technically, and what’s happening behind the scenes 👇
+
+---
+
+## 🧠 Big Picture First
+
+When we run:
+
+```go
+server.ListenAndServeTLS("cert.pem", "key.pem")
+```
+
+we’re saying:
+
+> “Start an HTTPS server using these certificate and private key files.”
+
+When Postman connects via `https://localhost:3000`, it performs a **TLS handshake** with our Go server.
+Postman then shows us diagnostic info about that secure connection — which is what you’re seeing.
+
+---
+
+## 🔍 Now Let’s Decode Each Line
+
+---
+
+### **1️⃣ Network**
+
+```
+HTTP Version: 1.1
+```
+
+Even though we configured `http2.ConfigureServer`, Postman might still fall back to **HTTP/1.1**.
+This depends on how Postman negotiates the protocol — it prefers HTTP/2 but will downgrade if needed.
+
+* **HTTP/1.1** → Traditional request-response, one request per connection.
+* **HTTP/2** → Multiplexed (multiple requests per connection), faster.
+
+✅ Both use TLS for security, so either way it’s encrypted.
+
+---
+
+### **2️⃣ Local Address**
+
+```
+::1
+```
+
+This is the **IPv6 loopback address** — equivalent to `127.0.0.1` in IPv4.
+
+It simply means:
+
+> “The request is being made to my own computer.”
+
+So ourr Go server and Postman are talking locally on the same machine — no internet involved.
+
+---
+
+### **3️⃣ Remote Address**
+
+```
+::1
+```
+
+Same as above — since both the client (Postman) and server (Go) are local.
+If this were a deployed server, this would show the **public IP address** of the remote host.
+
+---
+
+### **4️⃣ TLS Protocol**
+
+```
+TLSv1.3
+```
+
+✅ Excellent — this means the **latest, most secure TLS version** is being used.
+
+We configured:
+
+```go
+MinVersion: tls.VersionTLS12
+```
+
+and Go automatically used the newest available (TLS 1.3).
+
+**TLS 1.3 advantages:**
+
+* Faster handshake
+* Stronger encryption defaults
+* Removes insecure cipher suites
+* Fewer round trips (better performance)
+
+So Postman and ourr Go server successfully agreed to use TLS 1.3 during their handshake.
+
+---
+
+### **5️⃣ Cipher Name**
+
+```
+TLS_AES_128_GCM_SHA256
+```
+
+This line describes the **encryption algorithm** (cipher suite) chosen for the TLS session.
+
+Let’s decode it:
+
+| Component   | Meaning                                                             |
+| ----------- | ------------------------------------------------------------------- |
+| **AES_128** | The algorithm used for encrypting data (128-bit key AES encryption) |
+| **GCM**     | Galois/Counter Mode — adds both encryption and integrity protection |
+| **SHA256**  | Used for hashing, ensures message integrity                         |
+
+So this cipher suite gives us:
+
+* **Confidentiality** → via AES encryption
+* **Integrity** → via GCM
+* **Authentication** → via TLS certificate
+
+It’s one of the strongest and fastest cipher suites currently used in modern HTTPS.
+
+---
+
+### **6️⃣ Certificate CN**
+
+```
+API Inc
+```
+
+**CN (Common Name)** is the name we entered when we generated the certificate using `openssl`.
+
+It identifies *who* the certificate is issued to — in production, this would usually be ourr domain, e.g.:
+
+```
+CN = api.example.com
+```
+
+But here, since we typed “API Inc”, that’s what shows up in the certificate info.
+It basically says:
+
+> “This certificate belongs to API Inc.”
+
+---
+
+### **7️⃣ Issuer CN**
+
+```
+API Inc
+```
+
+The **Issuer CN** tells us *who issued this certificate*.
+
+Since we created the certificate ourselves using:
+
+```bash
+openssl req -x509 -newkey ...
+```
+
+we didn’t use a real Certificate Authority (CA).
+That means **we signed our own certificate**, so the **issuer and owner are the same**.
+
+✅ This is why Postman shows it as a **self-signed certificate**.
+
+---
+
+### **8️⃣ Valid Until**
+
+```
+Oct 28 17:05:26 2026 GMT
+```
+
+That’s the **expiry date** of our certificate — it’s valid for **365 days (1 year)** from when we created it, unless we changed the `-days` flag in ourr `openssl` command.
+
+Once it expires, clients (like Postman or browsers) will warn us again that the certificate is invalid until we renew it.
+
+---
+
+### **9️⃣ Self-signed certificate**
+
+```
+Self signed certificate
+```
+
+✅ This is key.
+
+In real-world HTTPS, certificates are issued by trusted **Certificate Authorities (CAs)** like:
+
+* Let’s Encrypt
+* DigiCert
+* GoDaddy
+* GlobalSign
+
+Browsers and tools automatically *trust* those authorities.
+
+But our local certificate (`cert.pem`) is **not signed by a CA**, it’s generated locally — so Postman correctly marks it as **“self-signed.”**
+
+This doesn’t mean it’s insecure — just that it’s **not trusted by default** because *anyone* could generate one.
+
+That’s why browsers show “⚠️ Not Secure” for local HTTPS servers — they can’t verify who we are.
+
+---
+
+## 🧩 What’s Actually Happening Under the Hood
+
+Here’s a quick timeline of what just happened:
+
+1. Postman → “Hey server, let’s start HTTPS.”
+2. Server → sends certificate (`cert.pem` with CN=API Inc).
+3. Postman → sees it’s self-signed, but still continues (since we’re local).
+4. They negotiate:
+
+   * **TLS version:** 1.3
+   * **Cipher:** TLS_AES_128_GCM_SHA256
+5. They exchange keys and encrypt the channel.
+6. Postman shows us the connection info we pasted.
+
+So from that point onward — all ourr data is encrypted.
+Even though the certificate isn’t “trusted,” the **encryption itself is fully functional**.
+
+---
+
+## 🔒 Summary Table
+
+| Field                       | Meaning                                             |
+| --------------------------- | --------------------------------------------------- |
+| **HTTP Version**            | Using HTTP/1.1 instead of HTTP/2                    |
+| **Local/Remote Address**    | Communication is on the same machine (::1 loopback) |
+| **TLS Protocol**            | Using TLS 1.3 for security                          |
+| **Cipher Name**             | Encryption method (AES-128 GCM with SHA-256)        |
+| **Certificate CN**          | “API Inc” — who the cert was issued to              |
+| **Issuer CN**               | “API Inc” — self-issued (self-signed)               |
+| **Valid Until**             | Certificate expiry date                             |
+| **Self-signed certificate** | Generated locally, not verified by a CA             |
+
+---
+
+
+
+

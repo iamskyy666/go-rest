@@ -1,90 +1,60 @@
 package main
 
 import (
-	"crypto/tls"
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
-
-	"golang.org/x/net/http2"
+	"strings"
 )
 
+// serialization: go obj{} (instance of a struct) -> json-string ([]byte)
+// deserialization: the opposite
+// json.marshal()/json.unmarshal() - for in-memory json processing/ops (ok for small-mid sized dataset)
+// json.encoder/decoder - for streaming json data.. working with large data sets and networking connections (more flexible and suited for complex ops.)
+
+type User struct {
+	Name string `json:"name"`
+	Email string `json:"email"`
+}
+
 func main() {
-	http.HandleFunc("/orders", func(w http.ResponseWriter, r *http.Request){
-		logRequestDetails(r)
-		fmt.Fprintf(w, "Handling incoming orders..✅")
-	})
+	user:= User{Name: "Skyy", Email: "skyy@email.com"}
 
-	http.HandleFunc("/users", func(w http.ResponseWriter, r *http.Request){
-		logRequestDetails(r)
-		fmt.Fprintf(w, "Handling users..✅")
-	})
-
-	PORT := 3000
-
-	// Load the TLS cert and key
-	cert:= "cert.pem"
-	key:= "key.pem"
-
-	// Configure TLS
-	tlsConfig:= &tls.Config{
-		MinVersion: tls.VersionTLS12,
-	}
-
-	// Create a custom server
-	server:= http.Server{
-		Addr: fmt.Sprintf(":%d",PORT),
-		Handler: nil,
-		TLSConfig: tlsConfig,
-	}
-
-
-	// Enable http2
-	//! 🟢 HTTP2 Server with TLS
-	http2.ConfigureServer(&server,&http2.Server{})
-
-	fmt.Println("🟢 Server is running on PORT:",PORT)
-
-	err:=server.ListenAndServeTLS(cert,key)
+	// MARSHAL
+	jsonData,err:=json.Marshal(user)
 	if err!=nil{
-		log.Fatal("⚠️ Could not start the server:",err)
+		log.Fatal("⚠️ ERR:",err)
 	}
+	fmt.Println(user) // {Skyy skyy@email.com}
+	fmt.Println(string(jsonData)) // {"name":"Skyy","email":"skyy@email.com"}
 
-
-
-	//! 🟢 HTTP 1.1 Server without TLS
-	// err:=http.ListenAndServe(fmt.Sprintf(":%d",PORT),nil)
-	// if err!=nil{
-	// 	log.Fatal("⚠️ Could not start the server:",err)
-	// }
-
-}
-
-func logRequestDetails(r *http.Request){
-	httpVersion := r.Proto
-	fmt.Println("☑️ Received request with HTTP version:",httpVersion)
-
-	if r.TLS!=nil{
-		tlsVersion:=getTLSVersionName(r.TLS.Version)
-		fmt.Println("☑️ Received request with TLS version:",tlsVersion)
-	}else{
-		fmt.Println("☑️ Received request without TLS")
+	// UNMARSHAL
+	var user1 User
+	err = json.Unmarshal(jsonData,&user1)
+	if err!=nil{
+		log.Fatal("⚠️ ERR:",err)
 	}
-}
+	fmt.Println("User created from json data:",user1) // User created from json data: {Skyy skyy@email.com}
 
-// curl -v -k https://localhost:3000/orders
-
-func getTLSVersionName(version uint16) string{
-	switch version {
-	case tls.VersionTLS10:
-		return "TLS 1.0"
-	case tls.VersionTLS11:
-		return "TLS 1.1"
-	case tls.VersionTLS12:
-		return "TLS 1.2"
-	case tls.VersionTLS13:
-		return "TLS 1.3"
-	default:
-		return "Unknown TLS version!"					
+	// ENCODER & DECODER - More common, dealing with APIs
+	jsonData1:= `{"name":"Soumadip","email":"soumadip@email.com"}`
+	reader:= strings.NewReader(jsonData1)
+	decoder:= json.NewDecoder(reader)
+	var user2 User
+	err = decoder.Decode(&user2)
+	if err!=nil{
+		log.Fatal("⚠️ ERR:",err)
 	}
+	fmt.Println(user2) // {Soumadip soumadip@email.com}
+
+	
+	var buff bytes.Buffer
+	encoder := json.NewEncoder(&buff) // encoder needs buffer
+
+	err=encoder.Encode(user)
+	if err!=nil{
+		log.Fatal("⚠️ ERR:",err)
+	}
+	fmt.Println("Encoded json-string:",buff.String()) // Encoded json-string: {"name":"Skyy","email":"skyy@email.com"}
 }
